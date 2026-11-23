@@ -1,0 +1,40 @@
+services:
+  ninimenu:
+    build:
+      context: .
+      args:
+        NPM_REGISTRY: https://registry.npmmirror.com
+        GOPROXY: https://goproxy.cn,direct
+    image: ninimenu:latest
+    container_name: ninimenu
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      TZ: Asia/Shanghai
+      PORT: "8080"
+      # 务必改掉默认密码，否则外网暴露后管理后台会被直接登录
+      ADMIN_PASSWORD: "change-me-please"
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+      - ./uploads_backup:/app/uploads_backup
+
+# 需要 HTTPS / 域名时，可再加一个 Caddy 反向代理（取消注释并把域名换成你的）
+#  caddy:
+#    image: caddy:2-alpine
+#    container_name: ninimenu-caddy
+#    restart: unless-stopped
+#    ports:
+#      - "80:80"
+#      - "443:443"
+#    volumes:
+#      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+#      - caddy_data:/data
+#      - caddy_config:/config
+#    depends_on:
+#      - ninimenu
+#
+# volumes:
+#   caddy_data:
+#   caddy_config:

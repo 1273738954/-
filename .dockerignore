@@ -1,0 +1,13 @@
+**/node_modules
+frontend/dist
+/dist
+/dist-win
+/.git
+/.gitignore
+/img
+/data
+/uploads
+/uploads_backup
+/backend/uploads_backup
+*.db
+*.db.bak*
