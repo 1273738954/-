@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { dishesApi, pickApi, recordsApi } from "@/api"
-import type { Dish, DishIngredient, MealRecord } from "@/types"
+import { dishesApi, pickApi, recordsApi, shoppingListApi } from "@/api"
+import type { Dish, DishIngredient, MealRecord, ShoppingCategory } from "@/types"
 import { asArray } from "@/lib/utils"
 import { launchConfetti } from "@/lib/confetti"
 import DishImage from "@/components/DishImage"
@@ -14,6 +14,8 @@ import {
   Check,
   ChefHat,
   Clock,
+  ClipboardCheck,
+  Copy,
   Dice5,
   Flame,
   Heart,
@@ -476,6 +478,159 @@ function MealPlanner({
   )
 }
 
+function buildShoppingText(list: ShoppingCategory[]): string {
+  const lines: string[] = ["🛒 买菜清单"]
+  list.forEach((cat) => {
+    const available = cat.items.filter((item) => !item.in_stock && !item.checked)
+    if (available.length === 0) return
+    lines.push("", `【${cat.category}】`)
+    available.forEach((item) => {
+      lines.push(`· ${item.name}${item.amount ? " " + item.amount : ""}`)
+    })
+  })
+  if (lines.length === 1) return ""
+  return lines.join("\n")
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // 降级到 execCommand
+  }
+  try {
+    const textarea = document.createElement("textarea")
+    textarea.value = text
+    textarea.setAttribute("readonly", "")
+    textarea.style.position = "fixed"
+    textarea.style.opacity = "0"
+    document.body.appendChild(textarea)
+    textarea.select()
+    const ok = document.execCommand("copy")
+    document.body.removeChild(textarea)
+    return ok
+  } catch {
+    return false
+  }
+}
+
+function ShoppingListModal({ onClose }: { onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+  const { data, isLoading } = useQuery({
+    queryKey: ["shopping-list"],
+    queryFn: () => shoppingListApi.get(),
+    staleTime: 0,
+  })
+  const list = data ?? []
+  const totalItems = list.reduce((acc, cat) => acc + cat.items.length, 0)
+  const needBuyItems = list.reduce(
+    (acc, cat) => acc + cat.items.filter((item) => !item.checked && !item.in_stock).length,
+    0,
+  )
+
+  async function handleCopy() {
+    const text = buildShoppingText(list)
+    if (!text) {
+      toast.error("没有需要购买的食材")
+      return
+    }
+    const ok = await copyText(text)
+    if (ok) {
+      setCopied(true)
+      toast.success(`已复制 ${needBuyItems} 项食材，可粘贴到盒马搜索`)
+      window.setTimeout(() => setCopied(false), 2000)
+    } else {
+      toast.error("复制失败，请检查浏览器剪贴板权限")
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[220] flex items-end justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/42" />
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative flex max-h-[86vh] w-full max-w-[640px] flex-col rounded-t-[28px] bg-card shadow-[0_-8px_30px_rgba(0,0,0,.16)] animate-fadeUp"
+      >
+        <div className="shrink-0 px-5 pt-3">
+          <div className="mx-auto mb-4 h-1 w-11 rounded-full bg-border2" />
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-lg font-extrabold">🛒 买菜清单</div>
+              <div className="mt-0.5 text-[12px] font-medium text-text3">
+                {totalItems > 0 ? `共 ${totalItems} 项 · 待买 ${needBuyItems} 项` : "还没有清单"}
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg text-text3 transition-all hover:text-primary active:scale-95"
+              aria-label="关闭"
+            >
+              <X size={18} strokeWidth={2.35} />
+            </button>
+          </div>
+          {needBuyItems > 0 && (
+            <button
+              onClick={handleCopy}
+              className="mb-3 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-extrabold text-white transition-all hover:bg-primary-dark active:scale-95"
+            >
+              {copied ? <ClipboardCheck size={17} strokeWidth={2.5} /> : <Copy size={17} strokeWidth={2.35} />}
+              {copied ? "已复制" : "一键复制清单"}
+            </button>
+          )}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
+          {isLoading ? (
+            <div className="py-10 text-center text-sm text-text3">加载中...</div>
+          ) : list.length === 0 ? (
+            <div className="py-10 text-center text-sm text-text3">
+              暂无买菜清单，点菜后自动生成今日+明日食材
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-border bg-bg shadow-[0_1px_3px_rgba(0,0,0,.04)]">
+              {list.map((cat, ci) => (
+                <div key={ci} className={`px-4 py-3 ${ci > 0 ? "border-t border-border" : ""}`}>
+                  <div className="mb-2 text-[13px] font-bold tracking-wide text-text2">{cat.category}</div>
+                  {cat.items.map((item, ii) => (
+                    <div
+                      key={ii}
+                      className={`flex items-center gap-2.5 py-1.5 text-sm ${item.in_stock ? "opacity-70" : ""}`}
+                    >
+                      <span
+                        className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md border-2 text-xs ${
+                          item.checked
+                            ? "border-mint bg-mint text-white"
+                            : item.in_stock
+                              ? "border-yellow bg-yellow-light text-yellow"
+                              : "border-border2 text-transparent"
+                        }`}
+                      >
+                        {item.in_stock ? "家" : "✓"}
+                      </span>
+                      <span className={item.checked || item.in_stock ? "text-text3 line-through" : ""}>
+                        {item.name}
+                      </span>
+                      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                        <span className="text-xs text-text3">{item.amount}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="mt-4 text-center text-[11px] text-text3">
+            复制后粘贴到盒马 App 搜索框，逐项添加即可
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DishPickerModal({
   meal,
   selectedMealById,
@@ -668,6 +823,7 @@ export default function Tomorrow() {
   const [initializedFor, setInitializedFor] = useState<string | null>(null)
   const [pickerMeal, setPickerMeal] = useState<MealType | null>(null)
   const [picking, setPicking] = useState(false)
+  const [showShopping, setShowShopping] = useState(false)
   const initStartedForRef = useRef<string | null>(null)
 
   const { data: tomorrowRecords, isLoading: recordsLoading } = useQuery({
@@ -922,7 +1078,7 @@ export default function Tomorrow() {
               lunch={lunch}
               dinner={dinner}
               onGenerateAll={() => generateAll()}
-              onOpenShopping={() => navigate("/more")}
+              onOpenShopping={() => setShowShopping(true)}
               disabled={disabled}
             />
 
@@ -1018,6 +1174,12 @@ export default function Tomorrow() {
           onRemove={(meal, dishId) => removeDish(meal, dishId)}
           onClose={() => setPickerMeal(null)}
         />
+      )}
+
+      {showShopping && (
+        <div className="relative z-[230]">
+          <ShoppingListModal onClose={() => setShowShopping(false)} />
+        </div>
       )}
     </div>
   )
