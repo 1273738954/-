@@ -1,6 +1,6 @@
 import { api, getUploadErrorMessage } from "./client"
 import defaultClient from "./client"
-import type { Dish, DishInput, PaginatedData, PickResult, BlindBoxResult, MealRecord, StatsData, DashboardData, Achievement, WeekPlan, ShoppingCategory, ShoppingCategoryOverride, Holiday, Quote, DayRating, PhotoWall, DishRecordsResponse, DishCategoryCounts, FavoriteOverview } from "@/types"
+import type { Dish, DishInput, PaginatedData, PickResult, BlindBoxResult, MealRecord, StatsData, DashboardData, Achievement, WeekPlan, ShoppingCategory, ShoppingCategoryOverride, Holiday, Quote, DayRating, PhotoWall, DishRecordsResponse, DishCategoryCounts, FavoriteOverview, FamilyMember, FamilyState } from "@/types"
 
 export const dishesApi = {
   list: (params?: Record<string, string>) =>
@@ -95,6 +95,14 @@ export const shoppingListApi = {
     api<null>("POST", "/shopping-list/toggle", data),
   setInventory: (data: { item_name: string; in_stock: boolean }) =>
     api<null>("POST", "/shopping-list/inventory", data),
+}
+
+export const familyApi = {
+  get: () => api<FamilyState>("GET", "/family"),
+  addMember: (name: string) => api<FamilyMember>("POST", "/family/members", { name }),
+  removeMember: (id: number) => api<null>("DELETE", `/family/members/${id}`),
+  toggleVote: (data: { member_id: number; dish_id: number }) =>
+    api<{ voted: boolean }>("POST", "/family/votes", data),
 }
 
 export const shoppingCategoriesApi = {

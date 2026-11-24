@@ -153,6 +153,21 @@ export interface ShoppingCategoryOverride {
   category: string
 }
 
+export interface FamilyMember {
+  id: number
+  name: string
+}
+
+export interface FamilyVoteGroup {
+  dish_id: number
+  member_ids: number[]
+}
+
+export interface FamilyState {
+  members: FamilyMember[]
+  votes: FamilyVoteGroup[]
+}
+
 export interface Holiday {
   id: number
   name: string

@@ -242,6 +242,10 @@ function PlanSummary({
   dinner,
   onGenerateAll,
   onOpenShopping,
+  onConfirm,
+  confirmLabel,
+  confirmDisabled,
+  confirmPending,
   disabled,
 }: {
   dateLabel: string
@@ -252,6 +256,10 @@ function PlanSummary({
   dinner: Dish[]
   onGenerateAll: () => void
   onOpenShopping: () => void
+  onConfirm: () => void
+  confirmLabel: string
+  confirmDisabled: boolean
+  confirmPending: boolean
   disabled: boolean
 }) {
   const savedText = hasSavedPlan ? (hasChanges ? "有修改" : "已保存") : "待保存"
@@ -312,6 +320,15 @@ function PlanSummary({
           买菜清单
         </button>
       </div>
+
+      <button
+        onClick={onConfirm}
+        disabled={confirmDisabled || disabled}
+        className="mt-2.5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-mint text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(76,195,138,.28)] transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-45 disabled:shadow-none"
+      >
+        <Check size={18} strokeWidth={2.7} />
+        {confirmPending ? "保存中…" : confirmLabel}
+      </button>
     </section>
   )
 }
@@ -519,10 +536,17 @@ async function copyText(text: string): Promise<boolean> {
 
 function ShoppingListModal({ onClose }: { onClose: () => void }) {
   const [copied, setCopied] = useState(false)
+  const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ["shopping-list"],
     queryFn: () => shoppingListApi.get(),
     staleTime: 0,
+  })
+  const stockMut = useMutation({
+    mutationFn: (v: { name: string; inStock: boolean }) =>
+      shoppingListApi.setInventory({ item_name: v.name, in_stock: v.inStock }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["shopping-list"] }),
+    onError: () => toast.error("操作失败，请重试"),
   })
   const list = data ?? []
   const totalItems = list.reduce((acc, cat) => acc + cat.items.length, 0)
@@ -614,6 +638,16 @@ function ShoppingListModal({ onClose }: { onClose: () => void }) {
                         {item.name}
                       </span>
                       <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                        <button
+                          onClick={() => stockMut.mutate({ name: item.name, inStock: !item.in_stock })}
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold transition-all active:scale-95 ${
+                            item.in_stock
+                              ? "bg-yellow-light text-yellow"
+                              : "bg-card text-text3 ring-1 ring-border hover:text-mint"
+                          }`}
+                        >
+                          {item.in_stock ? "家里有" : "标记有"}
+                        </button>
                         <span className="text-xs text-text3">{item.amount}</span>
                       </div>
                     </div>
@@ -1081,6 +1115,10 @@ export default function Tomorrow() {
               dinner={dinner}
               onGenerateAll={() => generateAll()}
               onOpenShopping={() => setShowShopping(true)}
+              onConfirm={savePlan}
+              confirmLabel={hasSavedPlan ? (hasChanges ? "更新菜单" : "已保存") : "就吃这顿"}
+              confirmDisabled={totalCount === 0 || (hasSavedPlan && !hasChanges)}
+              confirmPending={savePlanMut.isPending}
               disabled={disabled}
             />
 
@@ -1142,7 +1180,7 @@ export default function Tomorrow() {
         </main>
       )}
 
-      {!loading && (
+      {!loading && hasChanges && (
         <div
           className="fixed bottom-0 left-0 right-0 z-[110] border-t border-white/70 bg-bg/92 px-5 pt-3 backdrop-blur-2xl shadow-[0_-10px_28px_rgba(26,26,46,.07)]"
           style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
@@ -1162,7 +1200,7 @@ export default function Tomorrow() {
               className="flex h-12 min-w-[148px] items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-extrabold text-white transition-all hover:bg-primary-dark active:scale-95 disabled:opacity-50"
             >
               <Check size={17} strokeWidth={2.6} />
-              {savePlanMut.isPending ? "保存中" : hasSavedPlan ? (hasChanges ? "更新菜单" : "已保存") : "保存菜单"}
+              {savePlanMut.isPending ? "保存中" : hasSavedPlan ? "保存改动" : "保存菜单"}
             </button>
           </div>
         </div>

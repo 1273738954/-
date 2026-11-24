@@ -45,6 +45,8 @@ func Init() error {
 		&models.ShoppingCheck{},
 		&models.HomeInventory{},
 		&models.ShoppingItemCategory{},
+		&models.FamilyMember{},
+		&models.DishVote{},
 	); err != nil {
 		return err
 	}

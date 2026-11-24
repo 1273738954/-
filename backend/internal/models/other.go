@@ -106,3 +106,19 @@ type ShoppingItemCategory struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// FamilyMember 家庭成员，用于「想吃」投票
+type FamilyMember struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	Name      string    `json:"name" gorm:"not null;uniqueIndex"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// DishVote 成员对菜品的投票（同一成员对同一道菜只有一票）
+type DishVote struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	MemberID  uint      `json:"member_id" gorm:"not null;uniqueIndex:idx_vote_member_dish,priority:1"`
+	DishID    uint      `json:"dish_id" gorm:"not null;uniqueIndex:idx_vote_member_dish,priority:2;index"`
+	CreatedAt time.Time `json:"created_at"`
+}

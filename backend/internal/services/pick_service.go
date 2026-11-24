@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"math/rand"
 	"ninimenu/internal/config"
 	"ninimenu/internal/database"
@@ -127,7 +128,7 @@ func PickTomorrowDishes(opts TomorrowPickOptions) ([]models.Dish, error) {
 		pool = filterTomorrowPool(dishes, "balanced", map[uint]bool{}, recent, false)
 	}
 
-	sortTomorrowPool(pool, profile)
+	sortTomorrowPool(pool, profile, stockItemNames(), dishVoteCounts())
 	if len(pool) > count {
 		pool = pool[:count]
 	}
@@ -179,14 +180,14 @@ func matchesTomorrowProfile(d models.Dish, profile string) bool {
 	}
 }
 
-func sortTomorrowPool(dishes []models.Dish, profile string) {
+func sortTomorrowPool(dishes []models.Dish, profile string, stock map[string]bool, votes map[uint]int) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	r.Shuffle(len(dishes), func(i, j int) {
 		dishes[i], dishes[j] = dishes[j], dishes[i]
 	})
 
 	sort.SliceStable(dishes, func(i, j int) bool {
-		a, b := tomorrowDishScore(dishes[i], profile), tomorrowDishScore(dishes[j], profile)
+		a, b := tomorrowDishScore(dishes[i], profile, stock, votes), tomorrowDishScore(dishes[j], profile, stock, votes)
 		if a != b {
 			return a > b
 		}
@@ -195,13 +196,27 @@ func sortTomorrowPool(dishes []models.Dish, profile string) {
 	})
 }
 
-func tomorrowDishScore(d models.Dish, profile string) int {
+func tomorrowDishScore(d models.Dish, profile string, stock map[string]bool, votes map[uint]int) int {
 	score := 0
 	if d.Favorite {
 		score += 12
 	}
 	if matchesTomorrowProfile(d, profile) {
 		score += 40
+	}
+	// 优先消耗家中现有食材：每命中一样 +8，最多计两样
+	if n := countStockMatch(d, stock); n > 0 {
+		if n > 2 {
+			n = 2
+		}
+		score += n * 8
+	}
+	// 家人投票：每票 +6，最多计三票
+	if n := votes[d.ID]; n > 0 {
+		if n > 3 {
+			n = 3
+		}
+		score += n * 6
 	}
 	switch profile {
 	case "quick":
@@ -238,6 +253,59 @@ func tomorrowDishScore(d models.Dish, profile string) int {
 		// 取前 N 时家常菜永远选不到。需要更快时请切换"快手"偏好。
 	}
 	return score
+}
+
+// dishVoteCounts 返回每道菜的投票数
+func dishVoteCounts() map[uint]int {
+	var rows []struct {
+		DishID uint
+		Cnt    int
+	}
+	database.DB.Model(&models.DishVote{}).
+		Select("dish_id, count(*) as cnt").
+		Group("dish_id").
+		Scan(&rows)
+	m := make(map[uint]int, len(rows))
+	for _, r := range rows {
+		m[r.DishID] = r.Cnt
+	}
+	return m
+}
+
+// stockItemNames 返回「家里有」的食材名集合
+func stockItemNames() map[string]bool {
+	var items []models.HomeInventory
+	database.DB.Where("in_stock = ?", true).Find(&items)
+	set := make(map[string]bool, len(items))
+	for _, it := range items {
+		if name := strings.TrimSpace(it.ItemName); name != "" {
+			set[name] = true
+		}
+	}
+	return set
+}
+
+// countStockMatch 统计菜品食材命中库存的样数
+func countStockMatch(d models.Dish, stock map[string]bool) int {
+	if len(stock) == 0 || d.Ingredients == "" {
+		return 0
+	}
+	var items []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(d.Ingredients), &items); err != nil {
+		return 0
+	}
+	n := 0
+	for _, it := range items {
+		for s := range stock {
+			if it.Name == s || strings.Contains(it.Name, s) || strings.Contains(s, it.Name) {
+				n++
+				break
+			}
+		}
+	}
+	return n
 }
 
 func recentDishIDMap(days int) map[uint]bool {

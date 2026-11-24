@@ -1,16 +1,16 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { dishesApi, favoritesApi, settingsApi, recordsApi } from "@/api"
+import { dishesApi, favoritesApi, settingsApi, recordsApi, familyApi } from "@/api"
 import { asArray } from "@/lib/utils"
 import { gsap, scrollToElement } from "@/lib/gsap"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import DishImage, { isImageUrl } from "@/components/DishImage"
-import type { Dish, MealRecord } from "@/types"
+import type { Dish, MealRecord, FamilyMember } from "@/types"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import { useAuthStore } from "@/store/useAuthStore"
 import toast from "react-hot-toast"
-import { Settings, UtensilsCrossed, Minus, Plus, ChefHat, X, Trash2 } from "lucide-react"
+import { Settings, UtensilsCrossed, Minus, Plus, ChefHat, X, Trash2, Users } from "lucide-react"
 
 const DEFAULT_CATEGORIES = ["川菜", "粤菜", "家常菜", "快手菜", "汤品", "主食"]
 const DEFAULT_TASTES = ["酸", "甜", "辣", "鲜", "清淡", "咸鲜", "麻辣", "蒜香", "酱香", "糖醋", "酸辣", "香辣"]
@@ -28,6 +28,105 @@ function dateKey(d = new Date()) {
 
 const PAGE_SIZE = 30
 
+function FamilyModal({
+  members,
+  activeMember,
+  onSelect,
+  onClose,
+}: {
+  members: FamilyMember[]
+  activeMember: number | null
+  onSelect: (id: number) => void
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const [name, setName] = useState("")
+  const addMut = useMutation({
+    mutationFn: (n: string) => familyApi.addMember(n),
+    onSuccess: (m) => {
+      setName("")
+      onSelect(m.id)
+      qc.invalidateQueries({ queryKey: ["family"] })
+      toast.success(`已添加 ${m.name}`)
+    },
+    onError: () => toast.error("添加失败，名字最多 8 个字"),
+  })
+  const delMut = useMutation({
+    mutationFn: (id: number) => familyApi.removeMember(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["family"] }),
+    onError: () => toast.error("删除失败"),
+  })
+
+  return (
+    <div className="fixed inset-0 z-[220] flex items-end justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/42" />
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-[640px] rounded-t-[28px] bg-card p-5 pb-8 shadow-[0_-8px_30px_rgba(0,0,0,.16)] animate-fadeUp"
+      >
+        <div className="mx-auto mb-4 h-1 w-11 rounded-full bg-border2" />
+        <div className="mb-1 flex items-center justify-between">
+          <div className="text-lg font-extrabold">👨‍👩‍👧 家人投票</div>
+          <button
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-bg text-text3 transition-all hover:text-primary active:scale-95"
+            aria-label="关闭"
+          >
+            <X size={18} strokeWidth={2.35} />
+          </button>
+        </div>
+        <div className="mb-4 text-[12px] font-medium text-text3">
+          选中身份后，点菜品旁的 🤤 记下「谁想吃」，票数高的菜会被优先推荐
+        </div>
+
+        <div className="mb-4 flex flex-wrap gap-2">
+          {members.length === 0 && (
+            <div className="text-[12px] text-text3">还没有成员，先添加一个吧</div>
+          )}
+          {members.map((m) => (
+            <div
+              key={m.id}
+              className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-bold transition-all ${
+                activeMember === m.id
+                  ? "border-mint bg-mint-light text-mint"
+                  : "border-border bg-bg text-text2"
+              }`}
+            >
+              <button onClick={() => onSelect(m.id)} className="active:scale-95">
+                {m.name}
+              </button>
+              <button
+                onClick={() => delMut.mutate(m.id)}
+                className="text-text3 transition-colors hover:text-primary"
+                aria-label={`删除 ${m.name}`}
+              >
+                <X size={12} strokeWidth={2.5} />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="添加成员，如：爸爸"
+            maxLength={8}
+            className="flex-1 rounded-2xl border border-border bg-bg px-3 py-2.5 text-[13px] outline-none transition-all focus:border-mint"
+          />
+          <button
+            onClick={() => name.trim() && addMut.mutate(name.trim())}
+            disabled={!name.trim() || addMut.isPending}
+            className="flex h-[42px] min-w-[76px] items-center justify-center rounded-2xl bg-mint px-4 text-sm font-extrabold text-white transition-all active:scale-95 disabled:opacity-45"
+          >
+            {addMut.isPending ? "添加中" : "添加"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function DishList() {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -36,12 +135,34 @@ export default function DishList() {
   const [activeCategory, setActiveCategory] = useState("全部")
   const [activeTaste, setActiveTaste] = useState("全部")
   const [showTodayModal, setShowTodayModal] = useState(false)
+  const [showFamily, setShowFamily] = useState(false)
+  const [currentMemberId, setCurrentMemberId] = useState<number | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const today = dateKey()
 
   const { data: settings } = useQuery({
     queryKey: ["settings"],
     queryFn: () => settingsApi.get(),
+  })
+
+  const { data: family } = useQuery({
+    queryKey: ["family"],
+    queryFn: () => familyApi.get(),
+  })
+  const members = family?.members ?? []
+  const activeMember = currentMemberId ?? members[0]?.id ?? null
+  const voteMap = useMemo(() => {
+    const m = new Map<number, number[]>()
+    for (const v of family?.votes ?? []) m.set(v.dish_id, v.member_ids)
+    return m
+  }, [family])
+  const voteMut = useMutation({
+    mutationFn: (dishId: number) => {
+      if (!activeMember) return Promise.reject(new Error("no-member"))
+      return familyApi.toggleVote({ member_id: activeMember, dish_id: dishId })
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["family"] }),
+    onError: () => toast.error("请先点右上角「家人」添加成员"),
   })
 
   const { data: categoryCountsData } = useQuery({
@@ -296,9 +417,21 @@ export default function DishList() {
         subtitle="选菜加餐，一键搞定"
         icon={UtensilsCrossed}
         actions={
-           <HeaderIconButton onClick={() => navigate(isLoggedIn ? "/admin/dashboard" : "/admin/login")} aria-label="管理设置">
-            <Settings size={18} strokeWidth={2.3} />
-          </HeaderIconButton>
+          <>
+            <HeaderIconButton onClick={() => setShowFamily(true)} aria-label="家人投票">
+              <span className="flex items-center gap-1">
+                <Users size={18} strokeWidth={2.3} />
+                {activeMember !== null && (
+                  <span className="max-w-[40px] truncate text-[11px] font-bold">
+                    {members.find((m) => m.id === activeMember)?.name}
+                  </span>
+                )}
+              </span>
+            </HeaderIconButton>
+            <HeaderIconButton onClick={() => navigate(isLoggedIn ? "/admin/dashboard" : "/admin/login")} aria-label="管理设置">
+              <Settings size={18} strokeWidth={2.3} />
+            </HeaderIconButton>
+          </>
         }
       />
 
@@ -392,6 +525,9 @@ export default function DishList() {
                         onToggleFav={() => favMut.mutate({ id: d.id, active: favIds.has(d.id) })}
                         onToggleMeal={(mt) => toggleMeal(d, mt)}
                         onClick={() => navigate(`/dishes/${d.id}`)}
+                        voteCount={(voteMap.get(d.id) || []).length}
+                        votedByMe={activeMember !== null && (voteMap.get(d.id) || []).includes(activeMember)}
+                        onVote={() => voteMut.mutate(d.id)}
                       />
                     ))}
                   </div>
@@ -407,6 +543,9 @@ export default function DishList() {
                     onToggleFav={() => favMut.mutate({ id: d.id, active: favIds.has(d.id) })}
                     onToggleMeal={(mt) => toggleMeal(d, mt)}
                     onClick={() => navigate(`/dishes/${d.id}`)}
+                    voteCount={(voteMap.get(d.id) || []).length}
+                    votedByMe={activeMember !== null && (voteMap.get(d.id) || []).includes(activeMember)}
+                    onVote={() => voteMut.mutate(d.id)}
                   />
                 ))
               )}
@@ -527,6 +666,18 @@ export default function DishList() {
           )}
         </AnimatedBottomSheet>
       )}
+
+      {showFamily && (
+        <FamilyModal
+          members={members}
+          activeMember={activeMember}
+          onSelect={(id) => {
+            setCurrentMemberId(id)
+            setShowFamily(false)
+          }}
+          onClose={() => setShowFamily(false)}
+        />
+      )}
     </div>
   )
 }
@@ -581,9 +732,12 @@ interface DishRowProps {
   onToggleFav: () => void
   onToggleMeal: (mealType: "lunch" | "dinner") => void
   onClick: () => void
+  voteCount: number
+  votedByMe: boolean
+  onVote: () => void
 }
 
-function DishRow({ dish, isFav, isLunch, isDinner, onToggleFav, onToggleMeal, onClick }: DishRowProps) {
+function DishRow({ dish, isFav, isLunch, isDinner, onToggleFav, onToggleMeal, onClick, voteCount, votedByMe, onVote }: DishRowProps) {
   return (
     <div className="flex items-center gap-3 py-2.5 px-1 rounded-xl transition-all active:bg-card group">
       <div
@@ -601,6 +755,16 @@ function DishRow({ dish, isFav, isLunch, isDinner, onToggleFav, onToggleMeal, on
             className={`text-[14px] transition-all active:scale-90 flex-shrink-0 ${isFav ? "text-primary animate-heartbeat" : "text-text3 opacity-0 group-hover:opacity-100"}`}
           >
             {isFav ? "❤" : "♡"}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onVote() }}
+            className={`flex flex-shrink-0 items-center gap-0.5 rounded-full px-1.5 py-[1px] text-[10px] font-extrabold transition-all active:scale-90 ${
+              votedByMe ? "bg-mint text-white" : voteCount > 0 ? "bg-mint-light text-mint" : "bg-bg text-text3"
+            }`}
+            title="想吃"
+          >
+            <span>🤤</span>
+            {voteCount > 0 && <span>{voteCount}</span>}
           </button>
         </div>
         <div className="flex items-center gap-1.5 text-[11px] text-text2 mb-1.5">

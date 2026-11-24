@@ -68,6 +68,12 @@ func Setup(r *gin.Engine) {
 			app.GET("/shopping-list", handlers.GetShoppingList)
 			app.POST("/shopping-list/toggle", handlers.ToggleShoppingCheckHandler)
 			app.POST("/shopping-list/inventory", handlers.ToggleHomeInventoryHandler)
+
+			// 家人投票
+			app.GET("/family", handlers.GetFamily)
+			app.POST("/family/members", handlers.CreateMember)
+			app.DELETE("/family/members/:id", handlers.DeleteMember)
+			app.POST("/family/votes", handlers.ToggleVote)
 			app.GET("/holidays/upcoming", handlers.GetUpcomingHolidays)
 		}
 	}
