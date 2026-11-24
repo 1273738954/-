@@ -99,6 +99,8 @@ func PickTomorrowDishes(opts TomorrowPickOptions) ([]models.Dish, error) {
 	query := database.DB.Where("enabled = ?", true)
 	if mealType != "" {
 		query = query.Where("meal_type IN ?", []string{mealType, "all", ""})
+		// 午餐/晚餐只推荐"菜"，排除主食与汤品，避免出现"米粥 + 炒面"这类组合
+		query = query.Where("category NOT IN ?", []string{"主食", "汤品"})
 	}
 	query.Find(&dishes)
 
@@ -231,12 +233,9 @@ func tomorrowDishScore(d models.Dish, profile string) int {
 			score += 30
 		}
 	default:
-		if d.Difficulty == "easy" {
-			score += 6
-		}
-		if d.CookTime > 0 && d.CookTime <= 35 {
-			score += 4
-		}
+		// 均衡模式不做难度/时长加权：
+		// 否则快手菜因恒定的 easy(6)+短时长(4) 领先，分数永远高于家常菜，
+		// 取前 N 时家常菜永远选不到。需要更快时请切换"快手"偏好。
 	}
 	return score
 }
