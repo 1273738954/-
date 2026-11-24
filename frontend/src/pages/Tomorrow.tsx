@@ -1018,11 +1018,13 @@ export default function Tomorrow() {
   async function generateAll(nextProfile = profile, nextTargets = targets) {
     setPicking(true)
     try {
+      // 重新生成时排除当前已选，强制换一批
+      const currentIds = [...lunch, ...dinner].map((dish) => dish.id)
       const nextLunch = nextTargets.lunch > 0
-        ? await requestTomorrowDishes("lunch", nextTargets.lunch, nextProfile)
+        ? await requestTomorrowDishes("lunch", nextTargets.lunch, nextProfile, currentIds)
         : []
       const nextDinner = nextTargets.dinner > 0
-        ? await requestTomorrowDishes("dinner", nextTargets.dinner, nextProfile, nextLunch.map((dish) => dish.id))
+        ? await requestTomorrowDishes("dinner", nextTargets.dinner, nextProfile, [...currentIds, ...nextLunch.map((dish) => dish.id)])
         : []
       if (nextLunch.length === 0 && nextDinner.length === 0) {
         toast.error("暂无可推荐的菜品")

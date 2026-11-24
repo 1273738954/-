@@ -188,7 +188,8 @@ func sortTomorrowPool(dishes []models.Dish, profile string) {
 		if a != b {
 			return a > b
 		}
-		return dishes[i].ID < dishes[j].ID
+		// 同分时不再按 ID 排序，保持上面 Shuffle 后的顺序，确保每次推荐都有变化
+		return false
 	})
 }
 
